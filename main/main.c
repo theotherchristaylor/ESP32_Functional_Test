@@ -1,4 +1,7 @@
-/* GPIO Example
+/* ESP32_Functional_Test
+   Written by Chris Taylor, 3/26/19
+
+   A small program that utilizes an RTOS on the ESP32 that controls an LED's brightness with two user inputs.
 
    This example code is in the Public Domain (or CC0 licensed, at your option.)
 
@@ -6,77 +9,147 @@
    software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
    CONDITIONS OF ANY KIND, either express or implied.
 */
+
+// General Includes
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
+#include "esp_err.h"
+
+// GPIO Includes
 #include "driver/gpio.h"
+
+// LEDC Includes
+#include "driver/ledc.h"
+
 
 /**
  * Brief:
- * This test code shows how to configure gpio and how to use gpio interrupt.
+ * This code intialzies two GPIO inputs to be used with buttons connected to ground.
+ * The code waits for a GPIO interrupt, then fades the LED up or down based on which
+ * button was pressed. 
  *
- * GPIO status:
- * GPIO18: output
- * GPIO19: output
- * GPIO4:  input, pulled up, interrupt from rising edge and falling edge
- * GPIO5:  input, pulled up, interrupt from rising edge.
+ * Pin definitions:
+ * 
+ * GPIO4:  input, pulled up, interrupt from rising edge. Fades LED up.
+ * GPIO5:  input, pulled up, interrupt from rising edge. Fades LED down. 
  *
- * Test:
- * Connect GPIO18 with GPIO4
- * Connect GPIO19 with GPIO5
- * Generate pulses on GPIO18/19, that triggers interrupt on GPIO4/5
- *
+ * GPIO18: led PWM output. 
  */
 
-/* #define GPIO_OUTPUT_IO_0    18
-#define GPIO_OUTPUT_IO_1    19
-#define GPIO_OUTPUT_PIN_SEL  ((1ULL<<GPIO_OUTPUT_IO_0) | (1ULL<<GPIO_OUTPUT_IO_1))*/
-#define GPIO_INPUT_IO_0     4
-#define GPIO_INPUT_IO_1     5
-#define GPIO_INPUT_PIN_SEL  ((1ULL<<GPIO_INPUT_IO_0) | (1ULL<<GPIO_INPUT_IO_1))
-#define ESP_INTR_FLAG_DEFAULT 0
 
+// GPIO Defines
+#define GPIO_INPUT_IO_0     	4
+#define GPIO_INPUT_IO_1     	5
+#define GPIO_INPUT_PIN_SEL  	((1ULL<<GPIO_INPUT_IO_0) | (1ULL<<GPIO_INPUT_IO_1))
+#define ESP_INTR_FLAG_DEFAULT 	0
+
+// LED Defines
+#define LEDC_HS_TIMER			LEDC_TIMER_0
+#define LEDC_HS_MODE			LEDC_HIGH_SPEED_MODE
+#define LEDC_HS_CH0_GPIO 		(18)
+#define LEDC_HS_CH0_CHANNEL 	LEDC_CHANNEL_0
+
+#define LEDC_TEST_DUTY			(4000)
+#define LEDC_TEST_FADE_TIME		(3000)
+
+// Event queue for GPIO interrupts
 static xQueueHandle gpio_evt_queue = NULL;
 
+// GPIO ISR Handler
 static void IRAM_ATTR gpio_isr_handler(void* arg)
 {
     uint32_t gpio_num = (uint32_t) arg;
     xQueueSendFromISR(gpio_evt_queue, &gpio_num, NULL);
 }
 
-static void gpio_task_example(void* arg)
+static void button_press_task(void* arg)
 {
     uint32_t io_num;
-    for(;;) {
+	uint32_t fade_value;
+	
+	// Task waits indefinitely for xQueueReceive
+	for(;;) {
+		// Wait on button press, block indefinitely 
         if(xQueueReceive(gpio_evt_queue, &io_num, portMAX_DELAY)) {
-            printf("GPIO[%d] intr, val: %d\n", io_num, gpio_get_level(io_num));
-            // TODO: ADD CODE TO CHANGE PWM TO LED BASED ON io_num VALUE
+			
+			// Debounce	delay for 10ms
+        	vTaskDelay(10 / portTICK_RATE_MS);
+			
+			// Check which button was pressed
+			if(io_num == 4) { fade_value = LEDC_TEST_DUTY; }
+			else { fade_value = 0; }
+            
+			// CHANGE BRIGHTNESS
+			ledc_set_fade_with_time(LEDC_HS_MODE,				// speed mode
+									LEDC_HS_CH0_CHANNEL,		// channel
+									fade_value,					// duty cycle to increase to
+									LEDC_TEST_FADE_TIME);		// time to fade
+
+			// GO
+			ledc_fade_start(LEDC_HS_MODE,							// speed mode
+								LEDC_HS_CH0_CHANNEL,				// channel
+								LEDC_FADE_NO_WAIT);					// fade immediately
+	
+			//printf("GPIO[%d] intr, val: %d\n", io_num, gpio_get_level(io_num));
         }
     }
+	
+
+	
+	
+							
+	/*
+	// DECREASE BRIGHTNESS
+	ledc_set_fade_with_time(LEDC_HS_MODE,				// speed mode
+							LEDC_HS_CH0_CHANNEL,		// channel
+							0,							// duty cycle to increase to
+							LEDC_TEST_FADE_TIME);		// time to fade
+	*/
+
 }
 
 void app_main()
 {
-    gpio_config_t io_conf;
+	// ********************************************************************
+	// LEDC CONFIGURATION
+	// ********************************************************************
+	
+	// Configure timer
+	ledc_timer_config_t ledc_timer = {
+		.duty_resolution = LEDC_TIMER_13_BIT, 	// resolution of PWM duty
+		.freq_hz = 5000,						// frequency of PWM signal
+		.speed_mode = LEDC_HS_MODE,				// timer mode
+		.timer_num = LEDC_HS_TIMER				// timer index
+	};
+	
+	// Set configuration of timer0 for high speed
+	ledc_timer_config(&ledc_timer);
 
-    // OUTPUT CONFIGURATION
-/*
-    //disable interrupt
-    io_conf.intr_type = GPIO_PIN_INTR_DISABLE;
-    //set as output mode
-    io_conf.mode = GPIO_MODE_OUTPUT;
-    //bit mask of the pins that you want to set,e.g.GPIO18/19
-    io_conf.pin_bit_mask = GPIO_OUTPUT_PIN_SEL;
-    //disable pull-down mode
-    io_conf.pull_down_en = 0;
-    //disable pull-up mode
-    io_conf.pull_up_en = 0;
-    //configure GPIO with the given settings
-    gpio_config(&io_conf);
-    */
+	// Prepare channel configuration of LED controller
+	ledc_channel_config_t ledc_channel = {
+			.channel 	= LEDC_HS_CH0_CHANNEL,
+			.duty		= 0,
+			.gpio_num	= LEDC_HS_CH0_GPIO,
+			.speed_mode	= LEDC_HS_MODE,
+			.timer_sel	= LEDC_HS_TIMER
+	};
+	
+	// Initialize LED controller with configuration
+	ledc_channel_config(&ledc_channel);
+
+	// Initialize fade service
+	ledc_fade_func_install(0);
+
+
+	// ********************************************************************
+    // GPIO CONFIGURATION
+	// ********************************************************************
+	
+	gpio_config_t io_conf;
 
     //interrupt of rising edge
     io_conf.intr_type = GPIO_PIN_INTR_POSEDGE;
@@ -88,15 +161,10 @@ void app_main()
     io_conf.pull_up_en = 1;
     gpio_config(&io_conf);
 
-
-    //  WANT BOTH PINS TO INTERRUPT ON POSEDGE
-    //change gpio intrrupt type for one pin
-    //gpio_set_intr_type(GPIO_INPUT_IO_0, GPIO_INTR_ANYEDGE);
-
     //create a queue to handle gpio event from isr
     gpio_evt_queue = xQueueCreate(10, sizeof(uint32_t));
     //start gpio task
-    xTaskCreate(gpio_task_example, "gpio_task_example", 2048, NULL, 10, NULL);
+    xTaskCreate(button_press_task, "button_press_task", 2048, NULL, 10, NULL);
 
     //install gpio isr service
     gpio_install_isr_service(ESP_INTR_FLAG_DEFAULT);
@@ -105,22 +173,12 @@ void app_main()
     //hook isr handler for specific gpio pin
     gpio_isr_handler_add(GPIO_INPUT_IO_1, gpio_isr_handler, (void*) GPIO_INPUT_IO_1);
 
-
-    // DON'T KNOW WHY THIS IS DONE TWICE
-    /*
-    //remove isr handler for gpio number.
-    gpio_isr_handler_remove(GPIO_INPUT_IO_0);
-    //hook isr handler for specific gpio pin again
-    gpio_isr_handler_add(GPIO_INPUT_IO_0, gpio_isr_handler, (void*) GPIO_INPUT_IO_0);
-*/
     //int cnt = 0;
     printf("Running...");
-    while(1) {
-        // JUST TOGGLES OUTPUT OF OUTPUT GPIO
-
-        //printf("cnt: %d\n", cnt++);
-        //vTaskDelay(1000 / portTICK_RATE_MS);
-        //gpio_set_level(GPIO_OUTPUT_IO_0, cnt % 2);
-        //gpio_set_level(GPIO_OUTPUT_IO_1, cnt % 2);
+    
+	// Wait for gpio interrupt
+	while(1) {
+		printf("Waiting for button press...");
+		vTaskDelay(1000 / portTICK_RATE_MS);
     }
 }
