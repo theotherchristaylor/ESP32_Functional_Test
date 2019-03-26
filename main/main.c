@@ -62,8 +62,8 @@ static xQueueHandle gpio_evt_queue = NULL;
 // GPIO ISR Handler
 static void IRAM_ATTR gpio_isr_handler(void* arg)
 {
-    uint32_t gpio_num = (uint32_t) arg;
-    xQueueSendFromISR(gpio_evt_queue, &gpio_num, NULL);
+	uint32_t gpio_num = (uint32_t) arg;
+	xQueueSendFromISR(gpio_evt_queue, &gpio_num, NULL);
 }
 
 static void button_press_task(void* arg)
@@ -112,11 +112,11 @@ void app_main()
 
 	// Prepare channel configuration of LED controller
 	ledc_channel_config_t ledc_channel = {
-			.channel 	= LEDC_HS_CH0_CHANNEL,
-			.duty		= 0,
-			.gpio_num	= LEDC_HS_CH0_GPIO,
-			.speed_mode	= LEDC_HS_MODE,
-			.timer_sel	= LEDC_HS_TIMER
+		.channel 	= LEDC_HS_CH0_CHANNEL,
+		.duty		= 0,
+		.gpio_num	= LEDC_HS_CH0_GPIO,
+		.speed_mode	= LEDC_HS_MODE,
+		.timer_sel	= LEDC_HS_TIMER
 	};
 	
 	// Initialize LED controller with configuration
@@ -127,32 +127,32 @@ void app_main()
 
 
 	// ********************************************************************
-   	// GPIO CONFIGURATION
+	// GPIO CONFIGURATION
 	// ********************************************************************
 	
 	gpio_config_t io_conf;
 
-    //interrupt of falling edge
-    io_conf.intr_type = GPIO_PIN_INTR_NEGEDGE;
-    //bit mask of the pins, use GPIO4/5 here
-    io_conf.pin_bit_mask = GPIO_INPUT_PIN_SEL;
-    //set as input mode
-    io_conf.mode = GPIO_MODE_INPUT;
-    //enable pull-up mode
-    io_conf.pull_up_en = 1;
-    gpio_config(&io_conf);
+	//interrupt of falling edge
+	io_conf.intr_type = GPIO_PIN_INTR_NEGEDGE;
+	//bit mask of the pins, use GPIO4/5 here
+	io_conf.pin_bit_mask = GPIO_INPUT_PIN_SEL;
+	//set as input mode
+	io_conf.mode = GPIO_MODE_INPUT;
+	//enable pull-up mode
+	io_conf.pull_up_en = 1;
+	gpio_config(&io_conf);
 
-    //create a queue to handle gpio event from isr
-    gpio_evt_queue = xQueueCreate(10, sizeof(uint32_t));
-    //start gpio task
-    xTaskCreate(button_press_task, "button_press_task", 2048, NULL, 10, NULL);
+	//create a queue to handle gpio event from isr
+	gpio_evt_queue = xQueueCreate(10, sizeof(uint32_t));
+	//start gpio task
+	xTaskCreate(button_press_task, "button_press_task", 2048, NULL, 10, NULL);
 
-    //install gpio isr service
-    gpio_install_isr_service(ESP_INTR_FLAG_DEFAULT);
-    //hook isr handler for specific gpio pin
-    gpio_isr_handler_add(GPIO_INPUT_IO_0, gpio_isr_handler, (void*) GPIO_INPUT_IO_0);
-    //hook isr handler for specific gpio pin
-    gpio_isr_handler_add(GPIO_INPUT_IO_1, gpio_isr_handler, (void*) GPIO_INPUT_IO_1);
+	//install gpio isr service
+	gpio_install_isr_service(ESP_INTR_FLAG_DEFAULT);
+	//hook isr handler for specific gpio pin
+	gpio_isr_handler_add(GPIO_INPUT_IO_0, gpio_isr_handler, (void*) GPIO_INPUT_IO_0);
+	//hook isr handler for specific gpio pin
+	gpio_isr_handler_add(GPIO_INPUT_IO_1, gpio_isr_handler, (void*) GPIO_INPUT_IO_1);
 
     
 	printf("Running...");
@@ -161,5 +161,5 @@ void app_main()
 	while(1) {
 		printf("Waiting for button press...");
 		vTaskDelay(1000 / portTICK_RATE_MS);
-    }
+	}
 }
