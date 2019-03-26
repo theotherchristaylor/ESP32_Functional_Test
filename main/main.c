@@ -34,8 +34,8 @@
  *
  * Pin definitions:
  * 
- * GPIO4:  input, pulled up, interrupt from rising edge. Fades LED up.
- * GPIO5:  input, pulled up, interrupt from rising edge. Fades LED down. 
+ * GPIO4:  input, pulled up, interrupt from falling edge. Fades LED up.
+ * GPIO5:  input, pulled up, interrupt from falling edge. Fades LED down. 
  *
  * GPIO18: led PWM output. 
  */
@@ -51,7 +51,7 @@
 #define LEDC_HS_TIMER			LEDC_TIMER_0
 #define LEDC_HS_MODE			LEDC_HIGH_SPEED_MODE
 #define LEDC_HS_CH0_GPIO 		(18)
-#define LEDC_HS_CH0_CHANNEL 	LEDC_CHANNEL_0
+#define LEDC_HS_CH0_CHANNEL		LEDC_CHANNEL_0
 
 #define LEDC_TEST_DUTY			(4000)
 #define LEDC_TEST_FADE_TIME		(3000)
@@ -68,48 +68,29 @@ static void IRAM_ATTR gpio_isr_handler(void* arg)
 
 static void button_press_task(void* arg)
 {
-    uint32_t io_num;
+	uint32_t io_num;
 	uint32_t fade_value;
 	
 	// Task waits indefinitely for xQueueReceive
 	for(;;) {
 		// Wait on button press, block indefinitely 
-        if(xQueueReceive(gpio_evt_queue, &io_num, portMAX_DELAY)) {
+		if(xQueueReceive(gpio_evt_queue, &io_num, portMAX_DELAY)) {
 			
 			// Debounce	delay for 10ms
-        	vTaskDelay(10 / portTICK_RATE_MS);
+			vTaskDelay(10 / portTICK_RATE_MS);
 			
 			// Check which button was pressed
-			if(io_num == 4) { fade_value = LEDC_TEST_DUTY; }
+			if(io_num == GPIO_INPUT_IO_0) { fade_value = LEDC_TEST_DUTY; }
 			else { fade_value = 0; }
             
-			// CHANGE BRIGHTNESS
-			ledc_set_fade_with_time(LEDC_HS_MODE,				// speed mode
-									LEDC_HS_CH0_CHANNEL,		// channel
-									fade_value,					// duty cycle to increase to
-									LEDC_TEST_FADE_TIME);		// time to fade
-
-			// GO
-			ledc_fade_start(LEDC_HS_MODE,							// speed mode
-								LEDC_HS_CH0_CHANNEL,				// channel
-								LEDC_FADE_NO_WAIT);					// fade immediately
-	
-			//printf("GPIO[%d] intr, val: %d\n", io_num, gpio_get_level(io_num));
-        }
-    }
-	
-
-	
-	
-							
-	/*
-	// DECREASE BRIGHTNESS
-	ledc_set_fade_with_time(LEDC_HS_MODE,				// speed mode
-							LEDC_HS_CH0_CHANNEL,		// channel
-							0,							// duty cycle to increase to
-							LEDC_TEST_FADE_TIME);		// time to fade
-	*/
-
+			// Change brightness
+			ledc_set_fade_with_time(LEDC_HS_MODE, LEDC_HS_CH0_CHANNEL, fade_value, LEDC_TEST_FADE_TIME);
+			// Start fade
+			ledc_fade_start(LEDC_HS_MODE, LEDC_HS_CH0_CHANNEL, LEDC_FADE_NO_WAIT);
+		
+			printf("GPIO[%d] pressed.", io_num);
+		}
+	}
 }
 
 void app_main()
@@ -146,13 +127,13 @@ void app_main()
 
 
 	// ********************************************************************
-    // GPIO CONFIGURATION
+   	// GPIO CONFIGURATION
 	// ********************************************************************
 	
 	gpio_config_t io_conf;
 
-    //interrupt of rising edge
-    io_conf.intr_type = GPIO_PIN_INTR_POSEDGE;
+    //interrupt of falling edge
+    io_conf.intr_type = GPIO_PIN_INTR_NEGEDGE;
     //bit mask of the pins, use GPIO4/5 here
     io_conf.pin_bit_mask = GPIO_INPUT_PIN_SEL;
     //set as input mode
@@ -173,8 +154,8 @@ void app_main()
     //hook isr handler for specific gpio pin
     gpio_isr_handler_add(GPIO_INPUT_IO_1, gpio_isr_handler, (void*) GPIO_INPUT_IO_1);
 
-    //int cnt = 0;
-    printf("Running...");
+    
+	printf("Running...");
     
 	// Wait for gpio interrupt
 	while(1) {
